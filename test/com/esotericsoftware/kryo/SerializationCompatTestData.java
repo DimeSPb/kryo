@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, Nathan Sweet
+/* Copyright (c) 2008-2020, Nathan Sweet
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
@@ -43,6 +43,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
@@ -69,7 +70,8 @@ import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
 
 /** Testdata for serialization compatibility check. */
-public class SerializationCompatTestData {
+@SuppressWarnings("unused")
+class SerializationCompatTestData {
 
 	static class TestDataJava8 extends TestData {
 		private Optional<String> optionalString;
@@ -113,7 +115,7 @@ public class SerializationCompatTestData {
 		}
 	}
 
-	static public class TestData implements Serializable {
+	public static class TestData implements Serializable {
 		private boolean _boolean;
 		private char _char;
 		private byte _byte;
@@ -176,6 +178,7 @@ public class SerializationCompatTestData {
 		private char[] _charArray;
 		private String[] _stringArray;
 		private Person[] _personArray;
+		private BitSet _bitSet;
 
 		private Generic<String> _generic;
 		private GenericList<String> _genericList;
@@ -215,7 +218,7 @@ public class SerializationCompatTestData {
 			_integerArray = new Integer[] {13};
 
 			_date = new Date(42);
-			_calendar = Calendar.getInstance();
+			_calendar = Calendar.getInstance(Locale.ENGLISH);
 			_calendar.setTimeZone(TimeZone.getTimeZone("America/Los_Angeles"));
 			_calendar.set(2009, Calendar.JANUARY, 25, 10, 29, 0);
 			_calendar.set(Calendar.MILLISECOND, 0);
@@ -266,11 +269,12 @@ public class SerializationCompatTestData {
 			_personArray[0].addFriend(_personArray[1]);
 			_personArray[1].addFriend(_personArray[0]);
 
+			_bitSet = BitSet.valueOf(new long[] {1, 2, 99999, 2345678987654l});
+
 			_generic = new Generic("foo");
 			_genericList = new GenericList(new ArrayList(Arrays.asList(new Generic("foo"), new Generic("bar"))));
 			_genericArray = new GenericArray(new Generic("foo"), new Generic("bar"));
 			_public = new PublicClass(new PrivateClass("foo"));
-
 		}
 
 		public int hashCode () {
@@ -349,7 +353,7 @@ public class SerializationCompatTestData {
 		return person;
 	}
 
-	static public class Person {
+	public static class Person {
 
 		static enum Gender {
 			MALE, FEMALE
@@ -472,9 +476,9 @@ public class SerializationCompatTestData {
 
 	}
 
-	static public class Email implements Serializable {
+	public static class Email implements Serializable {
 
-		static private final long serialVersionUID = 1L;
+		private static final long serialVersionUID = 1L;
 
 		private String _name;
 		private String _email;
@@ -546,7 +550,7 @@ public class SerializationCompatTestData {
 
 	}
 
-	static public class PublicClass {
+	public static class PublicClass {
 		PrivateClass privateClass;
 
 		public PublicClass () {
@@ -565,7 +569,7 @@ public class SerializationCompatTestData {
 		}
 	}
 
-	static private class PrivateClass {
+	private static class PrivateClass {
 		String foo;
 
 		public PrivateClass (String foo) {

@@ -18,6 +18,8 @@ Please use the [Kryo mailing list](https://groups.google.com/forum/#!forum/kryo-
 - [Installation](#installation)
    * [With Maven](#with-maven)
    * [Without Maven](#without-maven)
+   * [On Android](#on-android)
+   * [Building from source](#building-from-source)
 - [Quickstart](#quickstart)
 - [IO](#io)
    * [Output](#output)
@@ -84,23 +86,40 @@ Please use the [Kryo mailing list](https://groups.google.com/forum/#!forum/kryo-
 
 ## Recent releases
 
-[5.0.0-RC1](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-5.0.0-RC1) fixes many issues and makes many long awaited improvements. See [Migration to v5](https://github.com/EsotericSoftware/kryo/wiki/Migration-to-v5).
-
-[4.0.2](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-4.0.2) brings several incremental fixes and improvements.
+* [5.0.4](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-5.0.4) - brings an important fix for `Pool`
+* [5.0.3](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-5.0.3) - brings an important fix for generics optimization.
+* [5.0.2](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-5.0.2) - brings an important fix for `CompatibleFieldSerializer`.
+* [5.0.1](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-5.0.1) - brings several incremental fixes and improvements.
+* [5.0.0](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-5.0.0) - the final Kryo 5 release fixing many issues and making many long awaited improvements over Kryo 4. Note: For libraries (not applications) using Kryo, there's now a completely self-contained, versioned artifact (for details see [installation](#installation)). For migration from Kryo 4.x see also [Migration to v5](https://github.com/EsotericSoftware/kryo/wiki/Migration-to-v5).
+* [4.0.2](https://github.com/EsotericSoftware/kryo/releases/tag/kryo-parent-4.0.2) - brings several incremental fixes and improvements.
 
 ## Installation
+
+Kryo publishes two kinds of artifacts/jars:
+* the default jar (with the usual library dependencies) which is meant for direct usage in applications (not libraries)
+* a dependency-free, "versioned" jar which should be used by other libraries. Different libraries shall be able to use different major versions of Kryo.
 
 Kryo JARs are available on the [releases page](https://github.com/EsotericSoftware/kryo/releases) and at [Maven Central](https://search.maven.org/#search|gav|1|g%3Acom.esotericsoftware%20a%3Akryo). The latest snapshots of Kryo, including snapshot builds of master, are in the [Sonatype Repository](https://oss.sonatype.org/content/repositories/snapshots/com/esotericsoftware/kryo/).
 
 ### With Maven
 
-To use the latest Kryo release, use this dependency entry in your `pom.xml`:
+To use the latest Kryo release in your application, use this dependency entry in your `pom.xml`:
 
 ```xml
 <dependency>
    <groupId>com.esotericsoftware</groupId>
    <artifactId>kryo</artifactId>
-   <version>5.0.0-RC1</version>
+   <version>5.0.4</version>
+</dependency>
+```
+
+To use the latest Kryo release in a library you want to publish, use this dependency entry in your `pom.xml`:
+
+```xml
+<dependency>
+   <groupId>com.esotericsoftware.kryo</groupId>
+   <artifactId>kryo5</artifactId>
+   <version>5.0.4</version>
 </dependency>
 ```
 
@@ -113,16 +132,42 @@ To use the latest Kryo snapshot, use:
    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
 </repository>
 
+<!-- for usage in an application: -->
 <dependency>
    <groupId>com.esotericsoftware</groupId>
    <artifactId>kryo</artifactId>
-   <version>5.0.0-RC2-SNAPSHOT</version>
+   <version>5.0.5-SNAPSHOT</version>
+</dependency>
+<!-- for usage in a library that should be published: -->
+<dependency>
+   <groupId>com.esotericsoftware.kryo</groupId>
+   <artifactId>kryo5</artifactId>
+   <version>5.0.5-SNAPSHOT</version>
 </dependency>
 ```
 
 ### Without Maven
 
 Not everyone is a Maven fan. Using Kryo without Maven requires placing the [Kryo JAR](#installation) on your classpath along with the dependency JARs found in [lib](https://github.com/EsotericSoftware/kryo/tree/master/lib).
+
+### On Android
+
+Kryo 5 ships with Objenesis 3.1 which [currently supports](https://github.com/easymock/objenesis/issues/79) Android API >= 26. If you want to use Kryo with older Android APIs, you need to explicitely depend on Objensis 2.6.
+
+```
+implementation ('com.esotericsoftware:kryo:5.0.4') {
+  exclude group: "org.objenesis"
+}
+implementation 'org.objenesis:objenesis:2.6'
+```
+
+### Building from source
+
+Building Kryo from source requires JDK11+ and Maven. To build all artifacts, run:
+
+```
+mvn clean && mvn install
+```
 
 ## Quickstart
 
@@ -223,16 +268,17 @@ It can be useful to write the length of some data, then the data. When the lengt
 
 Chunked encoding solves this problem by using a small buffer. When the buffer is full, its length is written, then the data. This is one chunk of data. The buffer is cleared and this continues until there is no more data to write. A chunk with a length of zero denotes the end of the chunks.
 
-Kryo provides classes to maked chunked encoding. OutputChunked is used to write chunked data. It extends Output, so has all the convenient methods to write data. When the OutputChunked buffer is full, it flushes the chunk to another OutputStream. The `endChunks` method is used to mark the end of a set of chunks.
+Kryo provides classes to maked chunked encoding. OutputChunked is used to write chunked data. It extends Output, so has all the convenient methods to write data. When the OutputChunked buffer is full, it flushes the chunk to another OutputStream. The `endChunk` method is used to mark the end of a set of chunks.
 
 ```java
 OutputStream outputStream = new FileOutputStream("file.bin");
 OutputChunked output = new OutputChunked(outputStream, 1024);
 // Write data to output...
-output.endChunks();
+output.endChunk();
 // Write more data to output...
-output.endChunks();
+output.endChunk();
 // Write even more data to output...
+output.endChunk();
 output.close();
 ```
 
@@ -582,7 +628,7 @@ Kryo can serialize Java 8+ closures that implement java.io.Serializable, with so
 
 Kryo `isClosure` is used to determine if a class is a closure. If so, then ClosureSerializer.Closure is used to find the class registration instead of the closure's class. To serialize closures, the following classes must be registered: ClosureSerializer.Closure, SerializedLambda, Object[], and Class. Additionally, the closure's capturing class must be registered.
 
-```
+```java
 kryo.register(Object[].class);
 kryo.register(Class.class);
 kryo.register(SerializedLambda.class);
@@ -704,6 +750,8 @@ By default, serializers will never receive a null, instead Kryo will write a byt
 ### Generics
 
 Kryo `getGenerics` provides generic type information so serializers can be more efficient. This is most commonly used to avoid writing the class when the type parameter class is final.
+
+Generic type inference is enabled by default and can be disabled with Kryo `setOptimizedGenerics(false)`. Disabling generics optimization can increase performance at the cost of a larger serialized size.
 
 If the class has a single type parameter, `nextGenericClass` returns the type parameter class, or null if none. After reading or writing any nested objects, `popGenericType` must be called. See CollectionSerializer for an example.
 
@@ -963,7 +1011,7 @@ Setting | Description | Default value
 `ignoreSyntheticFields` | If true, synthetic fields (generated by the compiler for scoping) are serialized. | false
 `fixedFieldTypes` | If true, it is assumed every field value's concrete type matches the field's type. This removes the need to write the class ID for field values. | false
 `copyTransient` | If true, all transient fields will be copied. | true
-`serializeTransient` | If true, transient fields will be serialized. | true
+`serializeTransient` | If true, transient fields will be serialized. | false
 `variableLengthEncoding` | If true, variable length values are used for int and long fields. | true
 `extendedFieldNames` | If true, field names are prefixed by their declaring class. This can avoid conflicts when a subclass has a field with the same name as a super class. | false
 
@@ -1057,7 +1105,7 @@ When `readUnknownTagData` and `chunkedEncoding` are false, fields must not be re
 
 Setting | Description | Default value
 --- | --- | ---
-`readUnknownTagData` | When false and an unknown tag is encountered, an exception is thrown or, if `chunkedEncoding` is true, the data is skipped. If the data is skipped and references are enabled, then any references in the skipped data are not read and further deserialization receive the wrong references and fail.<br><br>When true, the class for each field value is written before the value. When an unknown tag is encountered, an attempt to read the data is made. This is used to skip the data and, if references are enabled, any other values in the object graph referencing that data can still be deserialized. If reading the data fails (eg the class is unknown or has been removed) then an exception is thrown or, if `chunkedEncoding` is true, the data is skipped.
+`readUnknownTagData` | When false and an unknown tag is encountered, an exception is thrown or, if `chunkedEncoding` is true, the data is skipped.<br><br>When true, the class for each field value is written before the value. When an unknown tag is encountered, an attempt to read the data is made. This is used to skip the data and, if references are enabled, any other values in the object graph referencing that data can still be deserialized. If reading the data fails (eg the class is unknown or has been removed) then an exception is thrown or, if `chunkedEncoding` is true, the data is skipped.<br><br>In either case, if the data is skipped and references are enabled, then any references in the skipped data are not read and further deserialization may receive the wrong references and fail.
 `chunkedEncoding` | When true, fields are written with chunked encoding to allow unknown field data to be skipped. This impacts performance. | false
 `chunkSize` | The maximum size of each chunk for chunked encoding. | 1024
 
@@ -1067,14 +1115,13 @@ TaggedFieldSerializer also inherits all the settings of FieldSerializer.
 
 CompatibleFieldSerializer extends FieldSerializer to provided both forward and backward compatibility. This means fields can be added or removed without invalidating previously serialized bytes. Renaming or changing the type of a field is not supported. Like FieldSerializer, it can serialize most classes without needing annotations.
 
-The forward and backward compatibility and serialization [performance](https://raw.github.com/wiki/EsotericSoftware/kryo/images/benchmarks/fieldSerializer.png) depends on the `readUnknownTagData` and `chunkedEncoding` settings. Additionally, the first time the class is encountered in the serialized bytes, a simple schema is written containing the field name strings. Because field data is identified by name, if a super class has a field with the same name as a subclass, `extendedFieldNames` must be true.
+The forward and backward compatibility and serialization [performance](https://raw.github.com/wiki/EsotericSoftware/kryo/images/benchmarks/fieldSerializer.png) depends on the `readUnknownFieldData` and `chunkedEncoding` settings. Additionally, the first time the class is encountered in the serialized bytes, a simple schema is written containing the field name strings. Because field data is identified by name, if a super class has a field with the same name as a subclass, `extendedFieldNames` must be true.
 
 #### CompatibleFieldSerializer settings
 
 Setting | Description | Default value
 --- | --- | ---
-`readUnknownTagData` | 
-When false and an unknown tag is encountered, an exception is thrown or, if `chunkedEncoding` is true, the data is skipped. If the data is skipped and references are enabled, then any references in the data are not read and deserializing further data will fail.<br><br>When true, the class for each field value is written before the value. When an unknown field is encountered, an attempt to read the data is made. This is used to skip the data and, if references are enabled, any other values in the object graph referencing that data can still be deserialized. If reading the data fails (eg the class is unknown or has been removed) then an exception is thrown or, if `chunkedEncoding` is true, the data is skipped.
+`readUnknownFieldData` | When false and an unknown field is encountered, an exception is thrown or, if `chunkedEncoding` is true, the data is skipped.<br><br>When true, the class for each field value is written before the value. When an unknown field is encountered, an attempt to read the data is made. This is used to skip the data and, if references are enabled, any other values in the object graph referencing that data can still be deserialized. If reading the data fails (eg the class is unknown or has been removed) then an exception is thrown or, if `chunkedEncoding` is true, the data is skipped.<br><br>In either case, if the data is skipped and references are enabled, then any references in the skipped data are not read and further deserialization may receive the wrong references and fail.
 `chunkedEncoding` | When true, fields are written with chunked encoding to allow unknown field data to be skipped. This impacts performance. | false
 `chunkSize` | The maximum size of each chunk for chunked encoding. | 1024
 
@@ -1214,7 +1261,8 @@ If `true` is passed as the second argument to the Pool constructor, the Pool sto
 
 The third Pool parameter is the maximum capacity. If an object is freed and the pool already contains the maximum number of free objects, the specified object is reset but not added to the pool. The maximum capacity may be omitted for no limit.
 
-If an object implements Pool.Poolable then Poolable `reset` is called when the object is freed. This gives the object a chance to reset its state for reuse in the future. Alternatively, Pool `reset` can be overridden to reset objects. Input and Output implement Poolable to set their `position` and `total` to 0. Kryo implements Poolable to reset its object graph state.
+If an object implements Pool.Poolable then Poolable `reset` is called when the object is freed. This gives the object a chance to reset its state for reuse in the future. Alternatively, Pool `reset` can be overridden to reset objects. Input and Output implement Poolable to set their `position` and `total` to 0.
+Kryo does not implement Poolable because its object graph state is typically reset automatically after each serialization (see [Reset](#reset)). If you disable automatic reset via `setAutoReset(false)`, make sure that you call `Kryo.reset()` before returning the instance to the pool.
 
 Pool `getFree` returns the number of objects available to be obtained. If using soft references, this number may include objects that have been garbage collected. `clean` may be used first to remove empty soft references.
 
@@ -1251,7 +1299,7 @@ There are a number of projects using Kryo. A few are listed below. Please submit
 - [Cascalog](https://github.com/nathanmarz/cascalog) (Clojure/Java data processing and querying [details](https://groups.google.com/d/msg/cascalog-user/qgwO2vbkRa0/UeClnLL5OsgJ))
 - [memcached-session-manager](https://code.google.com/p/memcached-session-manager/) (Tomcat high-availability sessions)
 - [Mobility-RPC](http://code.google.com/p/mobility-rpc/) (RPC enabling distributed applications)
-- [akka-kryo-serialization](https://github.com/romix/akka-kryo-serialization) (Kryo serializers for Akka)
+- [akka-kryo-serialization](https://github.com/altoo-ag/akka-kryo-serialization) (Kryo serializers for Akka)
 - [Groupon](https://code.google.com/p/kryo/issues/detail?id=67)
 - [Jive](http://www.jivesoftware.com/jivespace/blogs/jivespace/2010/07/29/the-jive-sbs-cache-redesign-part-3)
 - [DestroyAllHumans](https://code.google.com/p/destroyallhumans/) (controls a [robot](http://www.youtube.com/watch?v=ZeZ3R38d3Cg)!)
@@ -1261,7 +1309,7 @@ There are a number of projects using Kryo. A few are listed below. Please submit
 ### Scala
 
 - [Twitter's Chill](https://github.com/twitter/chill) (Kryo serializers for Scala)
-- [akka-kryo-serialization](https://github.com/romix/akka-kryo-serialization) (Kryo serializers for Scala and Akka)
+- [akka-kryo-serialization](https://github.com/altoo-ag/akka-kryo-serialization) (Kryo serializers for Scala and Akka)
 - [Twitter's Scalding](https://github.com/twitter/scalding) (Scala API for Cascading)
 - [Kryo Serializers](https://github.com/magro/kryo-serializers) (Additional serializers for Java)
 - [Kryo Macros](https://github.com/evolution-gaming/kryo-macros) (Scala macros for compile-time generation of Kryo serializers)

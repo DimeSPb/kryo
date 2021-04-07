@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, Nathan Sweet
+/* Copyright (c) 2008-2020, Nathan Sweet
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
@@ -153,13 +153,14 @@ public class TaggedFieldSerializer<T> extends FieldSerializer<T> {
 				}
 				cachedField.setCanBeNull(false);
 				cachedField.setValueClass(valueClass);
+				cachedField.setReuseSerializer(false);
 			}
 
 			cachedField.write(fieldOutput, object);
 			if (chunked) outputChunked.endChunk();
 		}
 
-		if (pop > 0) popTypeVariables(pop);
+		popTypeVariables(pop);
 	}
 
 	/** Can be overidden to write data needed for {@link #create(Kryo, Input, Class)}. The default implementation does nothing. */
@@ -193,9 +194,10 @@ public class TaggedFieldSerializer<T> extends FieldSerializer<T> {
 				try {
 					registration = kryo.readClass(fieldInput);
 				} catch (KryoException ex) {
-					if (!chunked) throw new KryoException(
-						"Unable to read unknown tag " + tag + " data (unknown type). (" + getType().getName() + ")", ex);
-					if (DEBUG) debug("kryo", "Unable to read unknown tag " + tag + " data (unknown type).", ex);
+					String message = "Unable to read unknown tag " + tag + " data (unknown type). (" + getType().getName() + "#"
+						+ cachedField + ")";
+					if (!chunked) throw new KryoException(message, ex);
+					if (DEBUG) debug("kryo", message, ex);
 					inputChunked.nextChunk();
 					continue;
 				}
@@ -210,15 +212,17 @@ public class TaggedFieldSerializer<T> extends FieldSerializer<T> {
 					try {
 						kryo.readObject(fieldInput, valueClass);
 					} catch (KryoException ex) {
-						if (!chunked)
-							throw new KryoException("Unable to read unknown tag " + tag + " data, type: " + className(valueClass), ex);
-						if (DEBUG) debug("kryo", "Unable to read unknown tag " + tag + " data, type: " + className(valueClass), ex);
+						String message = "Unable to read unknown tag " + tag + " data, type: " + className(valueClass) + " ("
+							+ getType().getName() + "#" + cachedField + ")";
+						if (!chunked) throw new KryoException(message, ex);
+						if (DEBUG) debug("kryo", message, ex);
 					}
 					if (chunked) inputChunked.nextChunk();
 					continue;
 				}
 				cachedField.setCanBeNull(false);
 				cachedField.setValueClass(valueClass);
+				cachedField.setReuseSerializer(false);
 			} else if (cachedField == null) {
 				if (!chunked) throw new KryoException("Unknown field tag: " + tag + " (" + getType().getName() + ")");
 				if (TRACE) trace("kryo", "Skip unknown field tag: " + tag);
@@ -231,7 +235,7 @@ public class TaggedFieldSerializer<T> extends FieldSerializer<T> {
 			if (chunked) inputChunked.nextChunk();
 		}
 
-		if (pop > 0) popTypeVariables(pop);
+		popTypeVariables(pop);
 		return object;
 	}
 
@@ -247,7 +251,7 @@ public class TaggedFieldSerializer<T> extends FieldSerializer<T> {
 	}
 
 	/** Configuration for TaggedFieldSerializer instances. */
-	static public class TaggedFieldSerializerConfig extends FieldSerializerConfig {
+	public static class TaggedFieldSerializerConfig extends FieldSerializerConfig {
 		boolean readUnknownTagData, chunked;
 		int chunkSize = 1024;
 
@@ -256,15 +260,18 @@ public class TaggedFieldSerializer<T> extends FieldSerializer<T> {
 		}
 
 		/** When false and encountering an unknown tag, an exception is thrown or, if {@link #setChunkedEncoding(boolean) chunked
-		 * encoding} is enabled, the data is skipped. If the data is skipped and {@link Kryo#setReferences(boolean) references} are
-		 * enabled, then any references in the skipped data are not read and further deserialization receive the wrong references
-		 * and fail. Default is false.
+		 * encoding} is enabled, the data is skipped.
 		 * <p>
 		 * When true, the type of each field value is written before the value. When an unknown tag is encountered, an attempt to
 		 * read the data is made. This is used to skip the data and, if {@link Kryo#setReferences(boolean) references} are enabled,
 		 * then any other values in the object graph referencing that data can still be deserialized. If reading the data fails (eg
 		 * the class is unknown or has been removed) then an exception is thrown or, if {@link #setChunkedEncoding(boolean) chunked
-		 * encoding} is enabled, the data is skipped. */
+		 * encoding} is enabled, the data is skipped.
+		 * <p>
+		 * In either case, if the data is skipped and {@link Kryo#setReferences(boolean) references} are enabled, then any
+		 * references in the skipped data are not read and further deserialization receive the wrong references and fail.
+		 * <p>
+		 * Default is false. */
 		public void setReadUnknownTagData (boolean readUnknownTagData) {
 			this.readUnknownTagData = readUnknownTagData;
 		}

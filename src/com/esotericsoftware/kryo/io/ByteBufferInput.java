@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, Nathan Sweet
+/* Copyright (c) 2008-2020, Nathan Sweet
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
@@ -24,6 +24,7 @@ import com.esotericsoftware.kryo.util.Util;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -34,7 +35,7 @@ import java.nio.ByteOrder;
  * @author Roman Levenstein <romixlev@gmail.com>
  * @author Nathan Sweet */
 public class ByteBufferInput extends Input {
-	static private final ByteOrder nativeOrder = ByteOrder.nativeOrder();
+	private static final ByteOrder nativeOrder = ByteOrder.nativeOrder();
 
 	protected ByteBuffer byteBuffer;
 	private byte[] tempBuffer;
@@ -61,7 +62,8 @@ public class ByteBufferInput extends Input {
 	public ByteBufferInput (byte[] bytes, int offset, int count) {
 		if (bytes == null) throw new IllegalArgumentException("bytes cannot be null.");
 		ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);
-		buffer.put(bytes).flip();
+		buffer.put(bytes);
+		flipBuffer(buffer);
 		setBuffer(buffer);
 	}
 
@@ -130,16 +132,16 @@ public class ByteBufferInput extends Input {
 
 	public void reset () {
 		super.reset();
-		byteBuffer.position(0);
+		setBufferPosition(byteBuffer, 0);
 	}
 
-	/** Fills the buffer with more bytes. The default implementation reads from the {@link #getInputStream() InputStream}, if set.
-	 * Can be overridden to fill the bytes from another source. */
+	/** Fills the buffer with more bytes. May leave the buffer position changed. The default implementation reads from the
+	 * {@link #getInputStream() InputStream}, if set. Can be overridden to fill the bytes from another source. */
 	protected int fill (ByteBuffer buffer, int offset, int count) throws KryoException {
 		if (inputStream == null) return -1;
 		try {
 			if (tempBuffer == null) tempBuffer = new byte[2048];
-			buffer.position(offset);
+			setBufferPosition(buffer, offset);
 			int total = 0;
 			while (count > 0) {
 				int read = inputStream.read(tempBuffer, 0, Math.min(tempBuffer.length, count));
@@ -151,7 +153,6 @@ public class ByteBufferInput extends Input {
 				count -= read;
 				total += read;
 			}
-			buffer.position(offset);
 			return total;
 		} catch (IOException ex) {
 			throw new KryoException(ex);
@@ -164,10 +165,12 @@ public class ByteBufferInput extends Input {
 		if (required > capacity) throw new KryoException("Buffer too small: capacity: " + capacity + ", required: " + required);
 
 		int count;
+
 		// Try to fill the buffer.
 		if (remaining > 0) {
 			count = fill(byteBuffer, limit, capacity - limit);
 			if (count == -1) throw new KryoException("Buffer underflow.");
+			setBufferPosition(byteBuffer, position);
 			remaining += count;
 			if (remaining >= required) {
 				limit += count;
@@ -175,12 +178,12 @@ public class ByteBufferInput extends Input {
 			}
 		}
 
-		// Compact. Position after compaction can be non-zero.
-		byteBuffer.position(position);
-		byteBuffer.compact();
+		// Compact.
+		byteBuffer.compact(); // Buffer's position is at end of compacted bytes.
 		total += position;
 		position = 0;
 
+		// Try to fill again.
 		while (true) {
 			count = fill(byteBuffer, remaining, capacity - remaining);
 			if (count == -1) {
@@ -191,7 +194,7 @@ public class ByteBufferInput extends Input {
 			if (remaining >= required) break; // Enough has been read.
 		}
 		limit = remaining;
-		byteBuffer.position(0);
+		setBufferPosition(byteBuffer, 0);
 		return remaining;
 	}
 
@@ -206,6 +209,7 @@ public class ByteBufferInput extends Input {
 
 		// Try to fill the buffer.
 		int count = fill(byteBuffer, limit, capacity - limit);
+		setBufferPosition(byteBuffer, position);
 		if (count == -1) return remaining == 0 ? -1 : Math.min(remaining, optional);
 		remaining += count;
 		if (remaining >= optional) {
@@ -214,10 +218,11 @@ public class ByteBufferInput extends Input {
 		}
 
 		// Compact.
-		byteBuffer.compact();
+		byteBuffer.compact(); // Buffer's position is at end of compacted bytes.
 		total += position;
 		position = 0;
 
+		// Try to fill again.
 		while (true) {
 			count = fill(byteBuffer, remaining, capacity - remaining);
 			if (count == -1) break;
@@ -225,7 +230,7 @@ public class ByteBufferInput extends Input {
 			if (remaining >= optional) break; // Enough has been read.
 		}
 		limit = remaining;
-		byteBuffer.position(position);
+		setBufferPosition(byteBuffer, 0);
 		return remaining == 0 ? -1 : Math.min(remaining, optional);
 	}
 
@@ -264,17 +269,17 @@ public class ByteBufferInput extends Input {
 
 	public void setPosition (int position) {
 		this.position = position;
-		byteBuffer.position(position);
+		setBufferPosition(byteBuffer, position);
 	}
 
 	public void setLimit (int limit) {
 		this.limit = limit;
-		byteBuffer.limit(limit);
+		setBufferLimit(byteBuffer, limit);
 	}
 
 	public void skip (int count) throws KryoException {
 		super.skip(count);
-		byteBuffer.position(position);
+		setBufferPosition(byteBuffer, position);
 	}
 
 	public long skip (long count) throws KryoException {
@@ -294,6 +299,22 @@ public class ByteBufferInput extends Input {
 			} catch (IOException ignored) {
 			}
 		}
+	}
+
+	private int getBufferPosition (Buffer buffer) {
+		return buffer.position();
+	}
+
+	private void setBufferPosition (Buffer buffer, int position) {
+		buffer.position(position);
+	}
+
+	private void setBufferLimit (Buffer buffer, int limit) {
+		buffer.limit(limit);
+	}
+
+	private void flipBuffer (Buffer buffer) {
+		buffer.flip();
 	}
 
 	// byte:
@@ -363,7 +384,7 @@ public class ByteBufferInput extends Input {
 				}
 			}
 		}
-		position = byteBuffer.position();
+		position = getBufferPosition(byteBuffer);
 		return optimizePositive ? result : ((result >>> 1) ^ -(result & 1));
 	}
 
@@ -446,7 +467,7 @@ public class ByteBufferInput extends Input {
 				}
 			}
 		}
-		position = byteBuffer.position();
+		position = getBufferPosition(byteBuffer);
 		return optimizePositive ? result : ((result >>> 1) ^ -(result & 1));
 	}
 
@@ -536,7 +557,7 @@ public class ByteBufferInput extends Input {
 				}
 			}
 		}
-		position = byteBuffer.position();
+		position = getBufferPosition(byteBuffer);
 		return optimizePositive ? result : ((result >>> 1) ^ -(result & 1));
 	}
 
@@ -730,7 +751,7 @@ public class ByteBufferInput extends Input {
 		position += charIndex;
 		// If buffer didn't hold all chars or any were not ASCII, use slow path for remainder.
 		if (charIndex < charCount) {
-			byteBuffer.position(position);
+			setBufferPosition(byteBuffer, position);
 			readUtf8Chars_slow(charCount, charIndex);
 		}
 	}
@@ -778,13 +799,13 @@ public class ByteBufferInput extends Input {
 		for (int n = Math.min(chars.length, limit - position); charCount < n; charCount++) {
 			int b = byteBuffer.get();
 			if ((b & 0x80) == 0x80) {
-				position = byteBuffer.position();
+				position = getBufferPosition(byteBuffer);
 				chars[charCount] = (char)(b & 0x7F);
 				return new String(chars, 0, charCount + 1);
 			}
 			chars[charCount] = (char)b;
 		}
-		position = byteBuffer.position();
+		position = getBufferPosition(byteBuffer);
 		return readAscii_slow(charCount);
 	}
 
@@ -821,7 +842,7 @@ public class ByteBufferInput extends Input {
 					| (byteBuffer.get() & 0xFF) << 16 //
 					| (byteBuffer.get() & 0xFF) << 24;
 			}
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readInt();
@@ -843,7 +864,7 @@ public class ByteBufferInput extends Input {
 					| (long)(byteBuffer.get() & 0xFF) << 48 //
 					| (long)byteBuffer.get() << 56;
 			}
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readLong();
@@ -861,7 +882,7 @@ public class ByteBufferInput extends Input {
 					| (byteBuffer.get() & 0xFF) << 16 //
 					| (byteBuffer.get() & 0xFF) << 24);
 			}
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readFloat();
@@ -883,7 +904,7 @@ public class ByteBufferInput extends Input {
 					| (long)(byteBuffer.get() & 0xFF) << 48 //
 					| (long)byteBuffer.get() << 56);
 			}
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readDouble();
@@ -897,7 +918,7 @@ public class ByteBufferInput extends Input {
 			ByteBuffer byteBuffer = this.byteBuffer;
 			for (int i = 0; i < length; i++)
 				array[i] = (short)((byteBuffer.get() & 0xFF) | ((byteBuffer.get() & 0xFF) << 8));
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readShort();
@@ -911,7 +932,7 @@ public class ByteBufferInput extends Input {
 			ByteBuffer byteBuffer = this.byteBuffer;
 			for (int i = 0; i < length; i++)
 				array[i] = (char)((byteBuffer.get() & 0xFF) | ((byteBuffer.get() & 0xFF) << 8));
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readChar();
@@ -925,7 +946,7 @@ public class ByteBufferInput extends Input {
 			ByteBuffer byteBuffer = this.byteBuffer;
 			for (int i = 0; i < length; i++)
 				array[i] = byteBuffer.get() != 0;
-			position = byteBuffer.position();
+			position = getBufferPosition(byteBuffer);
 		} else {
 			for (int i = 0; i < length; i++)
 				array[i] = readBoolean();

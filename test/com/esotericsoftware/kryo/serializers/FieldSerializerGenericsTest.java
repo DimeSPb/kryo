@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, Nathan Sweet
+/* Copyright (c) 2008-2020, Nathan Sweet
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
@@ -33,12 +33,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.lang.builder.EqualsBuilder;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.objenesis.strategy.StdInstantiatorStrategy;
 
-public class FieldSerializerGenericsTest extends KryoTestCase {
+class FieldSerializerGenericsTest extends KryoTestCase {
 	@Test
-	public void testNoStackOverflowForSimpleGenericsCase () {
+	void testNoStackOverflowForSimpleGenericsCase () {
 		FooRef fooRef = new FooRef();
 		GenericFoo<FooRef> genFoo1 = new GenericFoo(fooRef);
 		GenericFoo<FooRef> genFoo2 = new GenericFoo(fooRef);
@@ -47,6 +47,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 		foos.add(genFoo1);
 		new FooContainer(foos);
 		Kryo kryo = new Kryo();
+		kryo.setReferences(true);
 		kryo.setRegistrationRequired(false);
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
@@ -54,7 +55,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 	}
 
 	@Test
-	public void testNoStackOverflowForComplexGenericsCase () {
+	void testNoStackOverflowForComplexGenericsCase () {
 		BarRef barRef = new BarRef();
 		GenericBar<BarRef> genBar1 = new GenericBar(barRef);
 		GenericBar<BarRef> genBar2 = new GenericBar(barRef);
@@ -63,6 +64,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 		bars.add(genBar1);
 		new GenericBarContainer<GenericBar>(new BarContainer(bars));
 		Kryo kryo = new Kryo();
+		kryo.setReferences(true);
 		kryo.setRegistrationRequired(false);
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
@@ -70,7 +72,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 	}
 
 	@Test
-	public void testMultipleValuesWithDifferentParameters () {
+	void testMultipleValuesWithDifferentParameters () {
 		// MultipleValues has fields with different parameterized types for Value.
 		MultipleValues values = new MultipleValues();
 		values.integer = new Value(123);
@@ -87,7 +89,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 	}
 
 	@Test
-	public void testParameterPassedToSuper () {
+	void testParameterPassedToSuper () {
 		SuperTest superTest = new SuperTest();
 		superTest.integer = new PassArgToSupers();
 		superTest.integer.list = new ArrayList();
@@ -113,7 +115,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 	}
 
 	@Test
-	public void testNestedLists () {
+	void testNestedLists () {
 		kryo.setInstantiatorStrategy(new DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
 
 		// Increase generics savings so difference is more easily seen.
@@ -199,7 +201,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 
 	// ---
 
-	static public final class Value<T> {
+	public static final class Value<T> {
 		public T value;
 		public ArrayList<T> list;
 
@@ -219,7 +221,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 		}
 	}
 
-	static public final class MultipleValues {
+	public static final class MultipleValues {
 		public Value<String> string;
 		public Value<Integer> integer;
 
@@ -230,7 +232,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 
 	// ---
 
-	static public class NestedLists {
+	public static class NestedLists {
 		public ArrayList<NestedListValue<Integer>> lists;
 
 		public boolean equals (Object obj) {
@@ -238,7 +240,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 		}
 	}
 
-	static public final class NestedListValue<T> {
+	public static final class NestedListValue<T> {
 		public T value;
 
 		public NestedListValue (T value) {
@@ -252,7 +254,7 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 
 	// ---
 
-	static public class Super<X> {
+	public static class Super<X> {
 		public ArrayList<X> list;
 		public X value;
 
@@ -261,13 +263,13 @@ public class FieldSerializerGenericsTest extends KryoTestCase {
 		}
 	}
 
-	static public class PassArgToSuper<T> extends Super<T> {
+	public static class PassArgToSuper<T> extends Super<T> {
 	}
 
-	static public final class PassArgToSupers<T> extends PassArgToSuper<T> {
+	public static final class PassArgToSupers<T> extends PassArgToSuper<T> {
 	}
 
-	static public final class SuperTest {
+	public static final class SuperTest {
 		public PassArgToSupers<Integer> integer;
 		public PassArgToSupers<String> string;
 

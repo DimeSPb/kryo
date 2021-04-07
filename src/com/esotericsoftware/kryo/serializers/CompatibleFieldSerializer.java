@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, Nathan Sweet
+/* Copyright (c) 2008-2020, Nathan Sweet
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
@@ -30,13 +30,14 @@ import com.esotericsoftware.kryo.io.InputChunked;
 import com.esotericsoftware.kryo.io.Output;
 import com.esotericsoftware.kryo.io.OutputChunked;
 import com.esotericsoftware.kryo.util.ObjectMap;
+import com.esotericsoftware.kryo.util.Util;
 
 /** Serializes objects using direct field assignment, providing both forward and backward compatibility. This means fields can be
  * added or removed without invalidating previously serialized bytes. Renaming or changing the type of a field is not supported.
  * Like {@link FieldSerializer}, it can serialize most classes without needing annotations.
  * <p>
  * The forward and backward compatibility and serialization performance depend on
- * {@link CompatibleFieldSerializerConfig#setReadUnknownTagData(boolean)} and
+ * {@link CompatibleFieldSerializerConfig#setReadUnknownFieldData(boolean)} and
  * {@link CompatibleFieldSerializerConfig#setChunkedEncoding(boolean)}. Additionally, the first time the class is encountered in
  * the serialized bytes, a simple schema is written containing the field name strings.
  * <p>
@@ -44,9 +45,9 @@ import com.esotericsoftware.kryo.util.ObjectMap;
  * {@link CompatibleFieldSerializerConfig#setExtendedFieldNames(boolean)} must be true.
  * @author Nathan Sweet */
 public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
-	static private final int binarySearchThreshold = 32;
+	private static final int binarySearchThreshold = 32;
 
-	private CompatibleFieldSerializerConfig config;
+	private final CompatibleFieldSerializerConfig config;
 
 	public CompatibleFieldSerializer (Kryo kryo, Class type) {
 		this(kryo, type, new CompatibleFieldSerializerConfig());
@@ -72,7 +73,7 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 			}
 		}
 
-		boolean chunked = config.chunked, readUnknownTagData = config.readUnknownTagData;
+		boolean chunked = config.chunked, readUnknownTagData = config.readUnknownFieldData;
 		Output fieldOutput;
 		OutputChunked outputChunked = null;
 		if (chunked)
@@ -100,13 +101,14 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 				}
 				cachedField.setCanBeNull(false);
 				cachedField.setValueClass(valueClass);
+				cachedField.setReuseSerializer(false);
 			}
 
 			cachedField.write(fieldOutput, object);
 			if (chunked) outputChunked.endChunk();
 		}
 
-		if (pop > 0) popTypeVariables(pop);
+		popTypeVariables(pop);
 	}
 
 	public T read (Kryo kryo, Input input, Class<? extends T> type) {
@@ -118,7 +120,7 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 		CachedField[] fields = (CachedField[])kryo.getGraphContext().get(this);
 		if (fields == null) fields = readFields(kryo, input);
 
-		boolean chunked = config.chunked, readUnknownTagData = config.readUnknownTagData;
+		boolean chunked = config.chunked, readUnknownTagData = config.readUnknownFieldData;
 		Input fieldInput;
 		InputChunked inputChunked = null;
 		if (chunked)
@@ -133,9 +135,9 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 				try {
 					registration = kryo.readClass(fieldInput);
 				} catch (KryoException ex) {
-					if (!chunked)
-						throw new KryoException("Unable to read unknown data (unknown type). (" + getType().getName() + ")", ex);
-					if (DEBUG) debug("kryo", "Unable to read unknown data (unknown type).", ex);
+					String message = "Unable to read unknown data (unknown type). (" + getType().getName() + "#" + cachedField + ")";
+					if (!chunked) throw new KryoException(message, ex);
+					if (DEBUG) debug("kryo", message, ex);
 					inputChunked.nextChunk();
 					continue;
 				}
@@ -150,15 +152,28 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 					try {
 						kryo.readObject(fieldInput, valueClass);
 					} catch (KryoException ex) {
-						if (!chunked) throw new KryoException(
-							"Unable to read unknown data, type: " + className(valueClass) + " (" + getType().getName() + ")", ex);
-						if (DEBUG) debug("kryo", "Unable to read unknown data, type: " + className(valueClass), ex);
+						String message = "Unable to read unknown data, type: " + className(valueClass) + " (" + getType().getName()
+							+ "#" + cachedField + ")";
+						if (!chunked) throw new KryoException(message, ex);
+						if (DEBUG) debug("kryo", message, ex);
 					}
 					if (chunked) inputChunked.nextChunk();
 					continue;
 				}
+
+				// Ensure the type in the data is compatible with the field type.
+				if (cachedField.valueClass != null && !Util.isAssignableTo(valueClass, cachedField.field.getType())) {
+					String message = "Read type is incompatible with the field type: " + className(valueClass) + " -> "
+						+ className(cachedField.valueClass) + " (" + getType().getName() + "#" + cachedField + ")";
+					if (!chunked) throw new KryoException(message);
+					if (DEBUG) debug("kryo", message);
+					inputChunked.nextChunk();
+					continue;
+				}
+
 				cachedField.setCanBeNull(false);
 				cachedField.setValueClass(valueClass);
+				cachedField.setReuseSerializer(false);
 			} else if (cachedField == null) {
 				if (!chunked) throw new KryoException("Unknown field. (" + getType().getName() + ")");
 				if (TRACE) trace("kryo", "Skip unknown field.");
@@ -171,7 +186,7 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 			if (chunked) inputChunked.nextChunk();
 		}
 
-		if (pop > 0) popTypeVariables(pop);
+		popTypeVariables(pop);
 		return object;
 	}
 
@@ -232,33 +247,36 @@ public class CompatibleFieldSerializer<T> extends FieldSerializer<T> {
 	}
 
 	/** Configuration for CompatibleFieldSerializer instances. */
-	static public class CompatibleFieldSerializerConfig extends FieldSerializerConfig {
-		boolean readUnknownTagData = true, chunked;
+	public static class CompatibleFieldSerializerConfig extends FieldSerializerConfig {
+		boolean readUnknownFieldData = true, chunked;
 		int chunkSize = 1024;
 
 		public CompatibleFieldSerializerConfig clone () {
 			return (CompatibleFieldSerializerConfig)super.clone(); // Clone is ok as we have only primitive fields.
 		}
 
-		/** When false and encountering an unknown tag, an exception is thrown or, if {@link #setChunkedEncoding(boolean) chunked
-		 * encoding} is enabled, the data is skipped. If the data is skipped and {@link Kryo#setReferences(boolean) references} are
-		 * enabled, then any references in the skipped data are not read and further deserialization receive the wrong references
-		 * and fail.
+		/** When false and encountering an unknown field, an exception is thrown or, if {@link #setChunkedEncoding(boolean) chunked
+		 * encoding} is enabled, the data is skipped.
 		 * <p>
-		 * When true, the type of each field value is written before the value. When an unknown tag is encountered, an attempt to
+		 * When true, the type of each field value is written before the value. When an unknown field is encountered, an attempt to
 		 * read the data is made so if it is a reference then any other values in the object graph referencing that data can be
 		 * deserialized. If reading the data fails (eg the class is unknown or has been removed) then an exception is thrown or, if
-		 * {@link #setChunkedEncoding(boolean) chunked encoding} is enabled, the data is skipped. Default is true. */
-		public void setReadUnknownTagData (boolean readUnknownTagData) {
-			this.readUnknownTagData = readUnknownTagData;
+		 * {@link #setChunkedEncoding(boolean) chunked encoding} is enabled, the data is skipped.
+		 * <p>
+		 * In either case, if the data is skipped and {@link Kryo#setReferences(boolean) references} are enabled, then any
+		 * references in the skipped data are not read and further deserialization receive the wrong references and fail.
+		 * <p>
+		 * Default is true. */
+		public void setReadUnknownFieldData (boolean readUnknownTagData) {
+			this.readUnknownFieldData = readUnknownTagData;
 		}
 
 		public boolean getReadUnknownTagData () {
-			return readUnknownTagData;
+			return readUnknownFieldData;
 		}
 
 		/** When true, fields are written with chunked encoding to allow unknown field data to be skipped. Default is false.
-		 * @see #setReadUnknownTagData(boolean) */
+		 * @see #setReadUnknownFieldData(boolean) */
 		public void setChunkedEncoding (boolean chunked) {
 			this.chunked = chunked;
 			if (TRACE) trace("kryo", "CompatibleFieldSerializerConfig setChunked: " + chunked);

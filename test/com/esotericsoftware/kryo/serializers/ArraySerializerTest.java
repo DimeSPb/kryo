@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2018, Nathan Sweet
+/* Copyright (c) 2008-2020, Nathan Sweet
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
@@ -19,19 +19,21 @@
 
 package com.esotericsoftware.kryo.serializers;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.esotericsoftware.kryo.KryoTestCase;
 import com.esotericsoftware.kryo.serializers.DefaultArraySerializers.ObjectArraySerializer;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 /** @author Nathan Sweet */
-public class ArraySerializerTest extends KryoTestCase {
+class ArraySerializerTest extends KryoTestCase {
 	{
 		supportsCopy = true;
 	}
 
 	@Test
-	public void testArrays () {
+	void testArrays () {
 		kryo.register(int[].class);
 		kryo.register(int[][].class);
 		kryo.register(int[][][].class);
@@ -72,5 +74,25 @@ public class ArraySerializerTest extends KryoTestCase {
 		array[2] = new Float[] {2.0f, 3.0f};
 		array[3] = new Float[] {3.0f};
 		roundTrip(31, array);
+	}
+
+	@Test
+	void testRecursiveArray () {
+		Object[] array = new Object[1];
+		array[0] = array;
+		kryo.register(Object[].class);
+		Object[] copy = kryo.copy(array);
+		assertTrue(copy == copy[0]);
+	}
+
+	@Test
+	void testStringArray () {
+		String moo = "moooooooooooooooooo";
+		String[] array = {moo, "dog", moo};
+		kryo.register(String[].class);
+		roundTrip(43, array);
+
+		kryo.setReferences(true);
+		roundTrip(28, array);
 	}
 }
